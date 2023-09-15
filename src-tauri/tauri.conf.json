@@ -11,6 +11,12 @@
     "version": "0.0.0"
   },
   "tauri": {
+    "systemTray": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false,
+      "menuOnLeftClick": true,
+      "title": "tauri"
+    },
     "allowlist": {
       "all": false,
       "shell": {
@@ -27,7 +33,7 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.tauri.dev",
+      "identifier": "me.satooru.kintai-app",
       "targets": "all"
     },
     "security": {
@@ -38,11 +44,9 @@
     },
     "windows": [
       {
-        "fullscreen": false,
-        "resizable": true,
-        "title": "kintai-app",
-        "width": 800,
-        "height": 600
+        "visible": false,
+        "skipTaskbar": true,
+        "focus": false
       }
     ]
   }
