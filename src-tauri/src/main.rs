@@ -8,76 +8,47 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::{CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
+use tauri::{
+    AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+};
 
 fn main() {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
     let attendance = CustomMenuItem::new("attendance".to_string(), "出勤");
+    let break_time = CustomMenuItem::new("break_time".to_string(), "休憩").disabled();
 
     let tray_menu = SystemTrayMenu::new()
         .add_item(attendance.clone()) // Clone attendance item for toggling its title
+        .add_item(break_time.clone()) // Clone break_time item for toggling its title
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(quit);
 
     let system_tray = SystemTray::new().with_menu(tray_menu);
 
-    let is_working = Arc::new(AtomicBool::new(false)); // Arc と AtomicBool を使用してスレッドセーフに
+    let is_working = Arc::new(AtomicBool::new(false)); // 出勤状態のフラグ
+    let is_on_break = Arc::new(AtomicBool::new(false)); // 休憩状態のフラグ
 
     tauri::Builder::default()
         .system_tray(system_tray)
+        .enable_macos_default_menu(false)
         .on_system_tray_event(move |app, event| {
-            // is_workingをクロージャ内で共有
+            // フラグをクロージャ内で共有
             let is_working = Arc::clone(&is_working);
+            let is_on_break = Arc::clone(&is_on_break);
 
             match event {
                 SystemTrayEvent::LeftClick { .. } => {
-                    println!("system tray received a left click");
-                }
-                SystemTrayEvent::RightClick { .. } => {
-                    println!("system tray received a right click");
-                }
-                SystemTrayEvent::DoubleClick { .. } => {
-                    println!("system tray received a double click");
+                    handle_tray_left_click(app, &is_working, &is_on_break);
                 }
                 SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
                     "quit" => {
                         std::process::exit(0);
                     }
                     "attendance" => {
-                        // is_working フラグを反転させる
-                        let new_value = !is_working.load(Ordering::Relaxed);
-                        is_working.store(new_value, Ordering::Relaxed);
-
-                        // メニューアイテムのタイトルを更新
-                        let item_handle = app.tray_handle().get_item(&id);
-                        let new_title = if new_value { "退勤" } else { "出勤" };
-                        let _ = item_handle.set_title(new_title);
-
-                        println!("出勤: {}", new_value);
-
-                        // 出勤ボタンが押されたらタイマーを開始
-                        if new_value {
-                            let app_clone = app.clone();
-                            thread::spawn(move || {
-                                let start_time = Instant::now();
-                                loop {
-                                    if !is_working.load(Ordering::Relaxed) {
-                                        break;
-                                    }
-                                    let elapsed = start_time.elapsed();
-                                    let formatted_duration = format_duration(elapsed);
-                                    println!("タイマー: {}", formatted_duration);
-
-                                    // アプリケーションのトレイハンドルを使ってタイトルを設定
-                                    let _ = app_clone.tray_handle().set_title(&formatted_duration);
-
-                                    thread::sleep(Duration::from_secs(1));
-                                }
-                            });
-                        } else {
-                            // システムトレイのタイトルを戻す
-                            let _ = app.tray_handle().set_title(new_title);
-                        }
+                        handle_attendance(app, &is_working, &is_on_break);
+                    }
+                    "break_time" => {
+                        handle_break_time(app, &is_on_break);
                     }
                     _ => {}
                 },
@@ -88,7 +59,100 @@ fn main() {
         .expect("error while running tauri application");
 }
 
-// 経過時間を hh:mm:ss のフォーマットに整形する関数
+// タスクトレイ右クリックの処理
+fn handle_tray_left_click(
+    app: &AppHandle,
+    is_working: &Arc<AtomicBool>,
+    is_on_break: &Arc<AtomicBool>,
+) {
+    if is_on_break.load(Ordering::Relaxed) {
+        handle_break_time(app, is_on_break);
+    } else {
+        handle_attendance(app, is_working, is_on_break);
+    }
+}
+
+// "attendance" メニュー項目の処理
+fn handle_attendance(app: &AppHandle, is_working: &Arc<AtomicBool>, is_on_break: &Arc<AtomicBool>) {
+    // 出勤/退勤を切り替える
+    let new_value = !is_working.load(Ordering::Relaxed);
+    is_working.store(new_value, Ordering::Relaxed);
+
+    // メニューアイテムのタイトルを更新
+    let item_handle = app.tray_handle().get_item("attendance");
+    let new_title = if new_value { "退勤" } else { "出勤" };
+    let _ = item_handle.set_title(new_title);
+    println!("出勤: {}", new_value);
+
+    // タイマーを開始または停止
+    if new_value {
+        start_timer(app, is_working.clone(), is_on_break.clone());
+
+        // "break_time" メニューアイテムを有効化
+        let item_handle = app.tray_handle().get_item("break_time");
+        let _ = item_handle.set_enabled(true);
+    } else {
+        // "break_time" メニューアイテムを有効化
+        let item_handle = app.tray_handle().get_item("break_time");
+        let _ = item_handle.set_enabled(false);
+
+        let app_clone = app.clone();
+        let _ = app_clone.tray_handle().set_title("勤怠管理");
+    }
+}
+
+// "break_time" メニュー項目の処理
+fn handle_break_time(app: &AppHandle, is_on_break: &Arc<AtomicBool>) {
+    let new_value = !is_on_break.load(Ordering::Relaxed);
+    is_on_break.store(new_value, Ordering::Relaxed);
+
+    {
+        // メニューアイテムのタイトルを更新
+        let item_handle = app.tray_handle().get_item("break_time");
+        let new_title = if new_value { "休憩解除" } else { "休憩" };
+        let _ = item_handle.set_title(new_title);
+        println!("休憩: {}", new_value);
+    }
+
+    if new_value {
+        let app_clone = app.clone();
+        let _ = app_clone.tray_handle().set_title("休憩中");
+
+        // "attendance" メニューアイテムを無効化
+        let item_handle = app.tray_handle().get_item("attendance");
+        let _ = item_handle.set_enabled(false);
+    } else {
+        // "attendance" メニューアイテムを有効化
+        let item_handle = app.tray_handle().get_item("attendance");
+        let _ = item_handle.set_enabled(true);
+    }
+}
+
+// タイマーを開始
+fn start_timer(app: &AppHandle, is_working: Arc<AtomicBool>, is_on_break: Arc<AtomicBool>) {
+    let app_clone = app.clone();
+    thread::spawn(move || {
+        let mut time = Duration::from_secs(0);
+        loop {
+            if !is_working.load(Ordering::Relaxed) {
+                break;
+            }
+            if is_on_break.load(Ordering::Relaxed) {
+                continue;
+            }
+            time += Duration::from_secs(1);
+            let formatted_duration = format_duration(time);
+            println!("タイマー: {}", formatted_duration);
+
+            // アプリケーションのトレイハンドルを使ってタイトルを設定
+            let _ = app_clone.tray_handle().set_title(&formatted_duration);
+
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+}
+
+// 経過時間を hh:mm:ss のフォーマットに整形
 fn format_duration(duration: Duration) -> String {
     let hours = duration.as_secs() / 3600;
     let minutes = (duration.as_secs() % 3600) / 60;

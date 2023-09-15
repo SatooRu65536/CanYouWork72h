@@ -14,8 +14,8 @@
     "systemTray": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": false,
-      "menuOnLeftClick": true,
-      "title": "tauri"
+      "menuOnLeftClick": false,
+      "title": "勤怠管理"
     },
     "allowlist": {
       "all": false,
@@ -46,7 +46,7 @@
       {
         "visible": false,
         "skipTaskbar": true,
-        "focus": false
+        "focus": true
       }
     ]
   }
