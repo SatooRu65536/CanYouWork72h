@@ -7,15 +7,15 @@
     "withGlobalTauri": true
   },
   "package": {
-    "productName": "kintai-app",
+    "productName": "72時間",
     "version": "0.0.0"
   },
   "tauri": {
     "systemTray": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false,
+      "iconPath": "icons/72jikan_long.png",
+      "iconAsTemplate": true,
       "menuOnLeftClick": false,
-      "title": "勤怠管理"
+      "title": ""
     },
     "allowlist": {
       "all": false,

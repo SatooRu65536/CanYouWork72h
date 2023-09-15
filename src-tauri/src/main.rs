@@ -1,15 +1,17 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tauri::{
-    AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem, ActivationPolicy,
 };
 
 fn main() {
@@ -29,6 +31,10 @@ fn main() {
     let is_on_break = Arc::new(AtomicBool::new(false)); // 休憩状態のフラグ
 
     tauri::Builder::default()
+        .setup(|app| {
+            app.set_activation_policy(ActivationPolicy::Accessory);
+            Ok(())
+        })
         .system_tray(system_tray)
         .enable_macos_default_menu(false)
         .on_system_tray_event(move |app, event| {
@@ -97,7 +103,7 @@ fn handle_attendance(app: &AppHandle, is_working: &Arc<AtomicBool>, is_on_break:
         let _ = item_handle.set_enabled(false);
 
         let app_clone = app.clone();
-        let _ = app_clone.tray_handle().set_title("勤怠管理");
+        let _ = app_clone.tray_handle().set_title("");
     }
 }
 
