@@ -2,7 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(target_os = "macos")]
-
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -10,13 +9,15 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use std::collections::HashMap;
 use tauri::{
-    AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem, ActivationPolicy,
+    ActivationPolicy, AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu,
+    SystemTrayMenuItem,
 };
 
 fn main() {
     let quit = CustomMenuItem::new("quit".to_string(), "Quit");
-    let attendance = CustomMenuItem::new("attendance".to_string(), "出勤");
+    let attendance = CustomMenuItem::new("attendance".to_string(), "業務開始");
     let break_time = CustomMenuItem::new("break_time".to_string(), "休憩").disabled();
 
     let tray_menu = SystemTrayMenu::new()
@@ -27,7 +28,7 @@ fn main() {
 
     let system_tray = SystemTray::new().with_menu(tray_menu);
 
-    let is_working = Arc::new(AtomicBool::new(false)); // 出勤状態のフラグ
+    let is_working = Arc::new(AtomicBool::new(false)); // 業務開始状態のフラグ
     let is_on_break = Arc::new(AtomicBool::new(false)); // 休憩状態のフラグ
 
     tauri::Builder::default()
@@ -80,15 +81,14 @@ fn handle_tray_left_click(
 
 // "attendance" メニュー項目の処理
 fn handle_attendance(app: &AppHandle, is_working: &Arc<AtomicBool>, is_on_break: &Arc<AtomicBool>) {
-    // 出勤/退勤を切り替える
+    // 業務開始/業務終了を切り替える
     let new_value = !is_working.load(Ordering::Relaxed);
     is_working.store(new_value, Ordering::Relaxed);
 
     // メニューアイテムのタイトルを更新
     let item_handle = app.tray_handle().get_item("attendance");
-    let new_title = if new_value { "退勤" } else { "出勤" };
+    let new_title = if new_value { "業務終了" } else { "業務開始" };
     let _ = item_handle.set_title(new_title);
-    println!("出勤: {}", new_value);
 
     // タイマーを開始または停止
     if new_value {
@@ -97,13 +97,15 @@ fn handle_attendance(app: &AppHandle, is_working: &Arc<AtomicBool>, is_on_break:
         // "break_time" メニューアイテムを有効化
         let item_handle = app.tray_handle().get_item("break_time");
         let _ = item_handle.set_enabled(true);
+        let _ = send_req("業務 開始");
     } else {
-        // "break_time" メニューアイテムを有効化
+        // "break_time" メニューアイテムを無効化
         let item_handle = app.tray_handle().get_item("break_time");
         let _ = item_handle.set_enabled(false);
 
         let app_clone = app.clone();
         let _ = app_clone.tray_handle().set_title("");
+        let _ = send_req("業務 終了");
     }
 }
 
@@ -112,13 +114,10 @@ fn handle_break_time(app: &AppHandle, is_on_break: &Arc<AtomicBool>) {
     let new_value = !is_on_break.load(Ordering::Relaxed);
     is_on_break.store(new_value, Ordering::Relaxed);
 
-    {
-        // メニューアイテムのタイトルを更新
-        let item_handle = app.tray_handle().get_item("break_time");
-        let new_title = if new_value { "休憩解除" } else { "休憩" };
-        let _ = item_handle.set_title(new_title);
-        println!("休憩: {}", new_value);
-    }
+    // メニューアイテムのタイトルを更新
+    let item_handle = app.tray_handle().get_item("break_time");
+    let new_title = if new_value { "休憩解除" } else { "休憩" };
+    let _ = item_handle.set_title(new_title);
 
     if new_value {
         let app_clone = app.clone();
@@ -127,10 +126,12 @@ fn handle_break_time(app: &AppHandle, is_on_break: &Arc<AtomicBool>) {
         // "attendance" メニューアイテムを無効化
         let item_handle = app.tray_handle().get_item("attendance");
         let _ = item_handle.set_enabled(false);
+        let _ = send_req("休憩 開始");
     } else {
         // "attendance" メニューアイテムを有効化
         let item_handle = app.tray_handle().get_item("attendance");
         let _ = item_handle.set_enabled(true);
+        let _ = send_req("休憩 終了");
     }
 }
 
@@ -148,7 +149,6 @@ fn start_timer(app: &AppHandle, is_working: Arc<AtomicBool>, is_on_break: Arc<At
             }
             time += Duration::from_secs(1);
             let formatted_duration = format_duration(time);
-            println!("タイマー: {}", formatted_duration);
 
             // アプリケーションのトレイハンドルを使ってタイトルを設定
             let _ = app_clone.tray_handle().set_title(&formatted_duration);
@@ -164,4 +164,18 @@ fn format_duration(duration: Duration) -> String {
     let minutes = (duration.as_secs() % 3600) / 60;
     let seconds = duration.as_secs() % 60;
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+#[tokio::main]
+async fn send_req(statu: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let data = [("name", "多田"), ("status", statu)];
+    let url = "https://script.google.com/macros/s/AKfycbz2UC1m0PPe_HVHDq0ieQc62AtVUdNSG7-10x4jEKP1iio_yo0Q3mJuSfUS3wXLwX2l0g/exec";
+    let response = reqwest::Client::new().post(url).form(&data).send().await?;
+
+    // サーバーからのレスポンスを取得
+    let body = response.text().await?;
+    println!("Response: {}", body);
+
+    eprintln!("*** 終了 ***");
+    Ok(())
 }

@@ -22,6 +22,11 @@
       "shell": {
         "all": false,
         "open": true
+      },
+      "http": {
+        "scope": [
+          "https://script.google.com/macros/s/AKfycbwx2gjm9NrUz9ZsCT2eYSUa93nFru-1Bt37itkHzmLBnXeo3hoSlxTXVAt8R0EJ4sTbpA/exec"
+        ]
       }
     },
     "bundle": {
