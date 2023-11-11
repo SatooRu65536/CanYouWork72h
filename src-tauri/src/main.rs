@@ -9,7 +9,6 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use std::collections::HashMap;
 use tauri::{
     ActivationPolicy, AppHandle, CustomMenuItem, SystemTray, SystemTrayEvent, SystemTrayMenu,
     SystemTrayMenuItem,
@@ -87,7 +86,11 @@ fn handle_attendance(app: &AppHandle, is_working: &Arc<AtomicBool>, is_on_break:
 
     // メニューアイテムのタイトルを更新
     let item_handle = app.tray_handle().get_item("attendance");
-    let new_title = if new_value { "業務終了" } else { "業務開始" };
+    let new_title = if new_value {
+        "業務終了"
+    } else {
+        "業務開始"
+    };
     let _ = item_handle.set_title(new_title);
 
     // タイマーを開始または停止
